@@ -96,8 +96,18 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # 데이터 변환 정의
+
     trn_transform = A.Compose([
         A.Resize(height=args.img_size, width=args.img_size),
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.5),
+        A.RandomRotate90(p=0.5),
+        A.Rotate(limit=20, p=0.5),
+        A.GaussNoise(var_limit=(10.0, 50.0), p=0.3),
+        A.MotionBlur(blur_limit=3, p=0.2),
+        A.RandomBrightnessContrast(p=0.3),
+        A.ColorJitter(p=0.3),
+        A.RandomResizedCrop(args.img_size, args.img_size, scale=(0.8, 1.0), p=0.3),
         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
     ])
@@ -136,7 +146,14 @@ def main():
     # 모델 정의
     model = timm.create_model(args.model_name, pretrained=True, num_classes=17).to(device)
     loss_fn = nn.CrossEntropyLoss()
+
     optimizer = Adam(model.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
+
+    # Early Stopping 설정
+    early_stopping_patience = 5
+    best_val_loss = float('inf')
+    patience_counter = 0
 
 
     # Validation 평가 함수
@@ -160,6 +177,7 @@ def main():
         return {"val_loss": val_loss, "val_acc": val_acc, "val_f1": val_f1}
 
     # 학습 루프
+
     for epoch in range(args.epochs):
         metrics = train_one_epoch(trn_loader, model, optimizer, loss_fn, device)
         val_metrics = evaluate(val_loader, model, loss_fn, device)
@@ -167,6 +185,21 @@ def main():
         metrics['epoch'] = epoch
         print(f"[Epoch {epoch}] Loss: {metrics['train_loss']:.4f}, Acc: {metrics['train_acc']:.4f}, F1: {metrics['train_f1']:.4f} | Val_Loss: {metrics['val_loss']:.4f}, Val_Acc: {metrics['val_acc']:.4f}, Val_F1: {metrics['val_f1']:.4f}")
         wandb.log(metrics)
+
+        # ReduceLROnPlateau 스케줄러 적용 (val_loss 기준)
+        scheduler.step(metrics['val_loss'])
+
+        # Early Stopping
+        if metrics['val_loss'] < best_val_loss:
+            best_val_loss = metrics['val_loss']
+            patience_counter = 0
+            # 필요시 best 모델 저장 가능
+            torch.save(model.state_dict(), 'best_model.pth')
+        else:
+            patience_counter += 1
+            if patience_counter >= early_stopping_patience:
+                print(f"Early stopping at epoch {epoch}")
+                break
 
     # 추론
     preds_list = []
