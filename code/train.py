@@ -17,6 +17,7 @@ from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from tqdm import tqdm
 from sklearn.metrics import accuracy_score, f1_score
+from sklearn.model_selection import StratifiedShuffleSplit
 import wandb
 
 # 데이터셋 클래스 정의
@@ -70,17 +71,17 @@ def train_one_epoch(loader, model, optimizer, loss_fn, device):
 def main():
     # argparse로 하이퍼파라미터 정의
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', type=int, default=1)
+    parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--img_size', type=int, default=128)
-    parser.add_argument('--model_name', type=str, default='resnet34')
+    parser.add_argument('--img_size', type=int, default=260)
+    parser.add_argument('--model_name', type=str, default='efficientnet_b2')
     parser.add_argument('--exp_name', type=str, default='baseline')
     parser.add_argument('--data_dir', type=str, default='../input/data')
     args = parser.parse_args()
 
     # WandB 프로젝트 초기화
-    wandb.init(project="cnn-doc-classification", name=args.exp_name)
+    wandb.init(project="cnn-doc-classification", name=f"{args.model_name}_{args.exp_name}")
     wandb.config.update(args)
 
     # 시드 고정
@@ -107,11 +108,29 @@ def main():
         ToTensorV2(),
     ])
 
-    # 데이터셋 및 로더 정의
-    trn_dataset = ImageDataset(os.path.join(args.data_dir, 'train.csv'), os.path.join(args.data_dir, 'train'), transform=trn_transform)
+
+    # Stratified Split을 이용한 train/validation 분할
+    train_csv_path = os.path.join(args.data_dir, 'train.csv')
+    train_img_dir = os.path.join(args.data_dir, 'train')
+    df = pd.read_csv(train_csv_path)
+  
+    sss = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+    for train_idx, val_idx in sss.split(df['ID'], df['target']):
+        train_df = df.iloc[train_idx].reset_index(drop=True)
+        val_df = df.iloc[val_idx].reset_index(drop=True)
+
+    # 임시 csv 파일로 저장 (메모리 내 Dataset도 가능하지만, 기존 코드와 통일)
+    train_df_path = os.path.join(args.data_dir, 'train_split.csv')
+    val_df_path = os.path.join(args.data_dir, 'val_split.csv')
+    train_df.to_csv(train_df_path, index=False)
+    val_df.to_csv(val_df_path, index=False)
+
+    trn_dataset = ImageDataset(train_df_path, train_img_dir, transform=trn_transform)
+    val_dataset = ImageDataset(val_df_path, train_img_dir, transform=tst_transform)
     tst_dataset = ImageDataset(os.path.join(args.data_dir, 'sample_submission.csv'), os.path.join(args.data_dir, 'test'), transform=tst_transform)
 
     trn_loader = DataLoader(trn_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
     tst_loader = DataLoader(tst_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
     # 모델 정의
@@ -119,11 +138,34 @@ def main():
     loss_fn = nn.CrossEntropyLoss()
     optimizer = Adam(model.parameters(), lr=args.lr)
 
+
+    # Validation 평가 함수
+    def evaluate(loader, model, loss_fn, device):
+        model.eval()
+        val_loss = 0
+        preds_list = []
+        targets_list = []
+        with torch.no_grad():
+            for image, targets in loader:
+                image = image.to(device)
+                targets = targets.to(device)
+                preds = model(image)
+                loss = loss_fn(preds, targets)
+                val_loss += loss.item()
+                preds_list.extend(preds.argmax(dim=1).detach().cpu().numpy())
+                targets_list.extend(targets.detach().cpu().numpy())
+        val_loss /= len(loader)
+        val_acc = accuracy_score(targets_list, preds_list)
+        val_f1 = f1_score(targets_list, preds_list, average='macro')
+        return {"val_loss": val_loss, "val_acc": val_acc, "val_f1": val_f1}
+
     # 학습 루프
     for epoch in range(args.epochs):
         metrics = train_one_epoch(trn_loader, model, optimizer, loss_fn, device)
+        val_metrics = evaluate(val_loader, model, loss_fn, device)
+        metrics.update(val_metrics)
         metrics['epoch'] = epoch
-        print(f"[Epoch {epoch}] Loss: {metrics['train_loss']:.4f}, Acc: {metrics['train_acc']:.4f}, F1: {metrics['train_f1']:.4f}")
+        print(f"[Epoch {epoch}] Loss: {metrics['train_loss']:.4f}, Acc: {metrics['train_acc']:.4f}, F1: {metrics['train_f1']:.4f} | Val_Loss: {metrics['val_loss']:.4f}, Val_Acc: {metrics['val_acc']:.4f}, Val_F1: {metrics['val_f1']:.4f}")
         wandb.log(metrics)
 
     # 추론
