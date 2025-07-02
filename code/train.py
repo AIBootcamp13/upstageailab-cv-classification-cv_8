@@ -73,9 +73,9 @@ def main():
     parser.add_argument('--epochs', type=int, default=1)
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--img_size', type=int, default=32)
+    parser.add_argument('--img_size', type=int, default=128)
     parser.add_argument('--model_name', type=str, default='resnet34')
-    parser.add_argument('--exp_name', type=str, default='baseline-exp')
+    parser.add_argument('--exp_name', type=str, default='baseline')
     parser.add_argument('--data_dir', type=str, default='../input/data')
     args = parser.parse_args()
 
@@ -143,9 +143,9 @@ def main():
     # 예측 결과 저장 (한국 시간 기준)
     KST = timezone(timedelta(hours=9))
     timestamp = datetime.now(KST).strftime("%Y%m%d_%H%M%S")
-    output_dir = os.path.join(os.path.dirname(args.data_dir), 'output')
+    output_dir = os.path.abspath(os.path.join(os.path.dirname(os.getcwd()), "output"))
     os.makedirs(output_dir, exist_ok=True)
-    filename = os.path.join(output_dir, f"{timestamp}_{args.exp_name}.csv")
+    filename = os.path.join(output_dir, f"{timestamp}_{args.model_name}_{args.exp_name}.csv")
     pred_df.to_csv(filename, index=False)
     print(f"예측 결과 저장 완료: {filename}")
 
