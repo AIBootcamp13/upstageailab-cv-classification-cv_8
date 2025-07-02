@@ -71,11 +71,11 @@ def train_one_epoch(loader, model, optimizer, loss_fn, device):
 def main():
     # argparse로 하이퍼파라미터 정의
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--epochs', type=int, default=30)
     parser.add_argument('--lr', type=float, default=1e-3)
-    parser.add_argument('--batch_size', type=int, default=32)
-    parser.add_argument('--img_size', type=int, default=260)
-    parser.add_argument('--model_name', type=str, default='efficientnet_b2')
+    parser.add_argument('--batch_size', type=int, default=24)
+    parser.add_argument('--img_size', type=int, default=300)
+    parser.add_argument('--model_name', type=str, default='efficientnet_b3')
     parser.add_argument('--exp_name', type=str, default='baseline')
     parser.add_argument('--data_dir', type=str, default='../input/data')
     args = parser.parse_args()
@@ -98,7 +98,8 @@ def main():
     # 데이터 변환 정의
 
     trn_transform = A.Compose([
-        A.Resize(height=args.img_size, width=args.img_size),
+        A.LongestMaxSize(max_size=args.img_size),  # 긴 쪽을 img_size로 맞추고
+        A.PadIfNeeded(min_height=args.img_size, min_width=args.img_size, border_mode=0),  # 짧은 쪽을 패딩
         A.HorizontalFlip(p=0.5),
         A.VerticalFlip(p=0.7),
         A.RandomRotate90(p=1.0),
@@ -107,14 +108,15 @@ def main():
         A.MotionBlur(blur_limit=5, p=0.4),
         A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.4),
         A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.4),
-        A.RandomResizedCrop(args.img_size, args.img_size, scale=(0.6, 1.0), ratio=(0.8, 1.2), p=0.4),
+        A.RandomResizedCrop(height=args.img_size, width=args.img_size, scale=(0.6, 1.0), ratio=(0.8, 1.2), p=0.4),
         A.Normalize(mean=[0.485, 0.456, 0.406],
                     std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
     ])
 
     tst_transform = A.Compose([
-        A.Resize(height=args.img_size, width=args.img_size),
+        A.LongestMaxSize(max_size=args.img_size),
+        A.PadIfNeeded(min_height=args.img_size, min_width=args.img_size, border_mode=0),
         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
     ])
