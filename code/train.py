@@ -100,15 +100,16 @@ def main():
     trn_transform = A.Compose([
         A.Resize(height=args.img_size, width=args.img_size),
         A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
-        A.RandomRotate90(p=0.5),
-        A.Rotate(limit=20, p=0.5),
-        A.GaussNoise(var_limit=(10.0, 50.0), p=0.3),
-        A.MotionBlur(blur_limit=3, p=0.2),
-        A.RandomBrightnessContrast(p=0.3),
-        A.ColorJitter(p=0.3),
-        A.RandomResizedCrop(args.img_size, args.img_size, scale=(0.8, 1.0), p=0.3),
-        A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        A.VerticalFlip(p=0.7),
+        A.RandomRotate90(p=1.0),
+        A.Rotate(limit=30, p=0.6),
+        A.GaussNoise(var_limit=(20.0, 60.0), p=0.5),
+        A.MotionBlur(blur_limit=5, p=0.4),
+        A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.4),
+        A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.4),
+        A.RandomResizedCrop(args.img_size, args.img_size, scale=(0.6, 1.0), ratio=(0.8, 1.2), p=0.4),
+        A.Normalize(mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
     ])
 
@@ -193,12 +194,13 @@ def main():
         if metrics['val_loss'] < best_val_loss:
             best_val_loss = metrics['val_loss']
             patience_counter = 0
-            # 필요시 best 모델 저장 가능
             torch.save(model.state_dict(), 'best_model.pth')
+            print(f"\n✅ New best model saved at epoch {epoch} with Val_Loss: {best_val_loss:.4f}")
         else:
             patience_counter += 1
+            print(f"\n⚠️ No improvement. patience_counter = {patience_counter}/{early_stopping_patience}")
             if patience_counter >= early_stopping_patience:
-                print(f"Early stopping at epoch {epoch}")
+                print(f"\n🛑 Early stopping triggered at epoch {epoch}.")
                 break
 
     # 추론
