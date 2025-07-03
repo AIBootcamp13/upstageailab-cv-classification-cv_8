@@ -288,13 +288,18 @@ def main():
             print(f"[Epoch {epoch}] Loss: {metrics['train_loss']:.4f}, Acc: {metrics['train_acc']:.4f}, F1: {metrics['train_f1']:.4f} | Val_Loss: {metrics['val_loss']:.4f}, Val_Acc: {metrics['val_acc']:.4f}, Val_F1: {metrics['val_f1']:.4f}")
             wandb.log(metrics)
 
-            scheduler.step(metrics['val_loss'])
+            # ✅ 모델 저장 기준 및 스케줄러 기준도 val_f1 기준으로 수정
+            scheduler.step(metrics['val_f1'])
 
-            if metrics['val_loss'] < best_val_loss:
-                best_val_loss = metrics['val_loss']
+            # F1 기준으로 best model 저장
+            if fold == 0:  # best_val_f1 초기화 위치 예시
+                best_val_f1 = 0.0
+
+            if metrics['val_f1'] > best_val_f1:  # val_f1 기준으로 최고 성능 모델 저장
+                best_val_f1 = metrics['val_f1']
                 patience_counter = 0
                 torch.save(model.state_dict(), best_model_path)
-                print(f"\n✅ New best model saved as {best_model_path} at epoch {epoch} with Val_Loss: {best_val_loss:.4f}")
+                print(f"\n✅ New best model saved as {best_model_path} at epoch {epoch} with Val_F1: {best_val_f1:.4f}")
             else:
                 patience_counter += 1
                 print(f"\n⚠️ No improvement. patience_counter = {patience_counter}/{args.early_stop}")
