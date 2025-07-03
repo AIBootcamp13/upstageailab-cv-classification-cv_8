@@ -20,6 +20,9 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import StratifiedShuffleSplit
 import wandb
 
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
+from warmup_scheduler import GradualWarmupScheduler  # pip install warmup-scheduler
+
 # 데이터셋 클래스 정의
 class ImageDataset(Dataset):
     def __init__(self, csv, path, transform=None):
@@ -78,6 +81,7 @@ def main():
     parser.add_argument('--model_name', type=str, default='efficientnet_b3')
     parser.add_argument('--exp_name', type=str, default='baseline')
     parser.add_argument('--data_dir', type=str, default='../input/data')
+    parser.add_argument('--model_type', type=str, default='cnn', choices=['cnn', 'transformer'])
     args = parser.parse_args()
 
     # WandB 프로젝트 초기화
@@ -96,30 +100,49 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # 데이터 변환 정의
+    if args.model_type == 'transformer':
+        trn_transform = A.Compose([
+            A.Resize(height=args.img_size, width=args.img_size),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.7),
+            A.RandomRotate90(p=1.0),
+            A.Rotate(limit=30, p=0.6),
+            A.CenterCrop(height=args.img_size, width=args.img_size),
+            A.Normalize(mean=[0.485, 0.456, 0.406],
+                        std=[0.229, 0.224, 0.225]),
+            ToTensorV2(),
+        ])
 
-    trn_transform = A.Compose([
-        A.LongestMaxSize(max_size=args.img_size),  # 긴 쪽을 img_size로 맞추고
-        A.PadIfNeeded(min_height=args.img_size, min_width=args.img_size, border_mode=0),  # 짧은 쪽을 패딩
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.7),
-        A.RandomRotate90(p=1.0),
-        A.Rotate(limit=30, p=0.6),
-        A.GaussNoise(var_limit=(20.0, 60.0), p=0.5),
-        A.MotionBlur(blur_limit=5, p=0.4),
-        A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.4),
-        A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.4),
-        A.RandomResizedCrop(height=args.img_size, width=args.img_size, scale=(0.6, 1.0), ratio=(0.8, 1.2), p=0.4),
-        A.Normalize(mean=[0.485, 0.456, 0.406],
-                    std=[0.229, 0.224, 0.225]),
-        ToTensorV2(),
-    ])
+        tst_transform = A.Compose([
+            A.Resize(height=args.img_size, width=args.img_size),
+            A.CenterCrop(height=args.img_size, width=args.img_size),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ToTensorV2(),
+        ])
+    else:
+        trn_transform = A.Compose([
+            A.LongestMaxSize(max_size=args.img_size),
+            A.PadIfNeeded(min_height=args.img_size, min_width=args.img_size, border_mode=0),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.7),
+            A.RandomRotate90(p=1.0),
+            A.Rotate(limit=30, p=0.6),
+            A.GaussNoise(var_limit=(20.0, 60.0), p=0.5),
+            A.MotionBlur(blur_limit=5, p=0.4),
+            A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.4),
+            A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.4),
+            A.RandomResizedCrop(height=args.img_size, width=args.img_size, scale=(0.6, 1.0), ratio=(0.8, 1.2), p=0.4),
+            A.Normalize(mean=[0.485, 0.456, 0.406],
+                        std=[0.229, 0.224, 0.225]),
+            ToTensorV2(),
+        ])
 
-    tst_transform = A.Compose([
-        A.LongestMaxSize(max_size=args.img_size),
-        A.PadIfNeeded(min_height=args.img_size, min_width=args.img_size, border_mode=0),
-        A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ToTensorV2(),
-    ])
+        tst_transform = A.Compose([
+            A.LongestMaxSize(max_size=args.img_size),
+            A.PadIfNeeded(min_height=args.img_size, min_width=args.img_size, border_mode=0),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ToTensorV2(),
+        ])
 
 
     # Stratified Split을 이용한 train/validation 분할
@@ -196,8 +219,9 @@ def main():
         if metrics['val_loss'] < best_val_loss:
             best_val_loss = metrics['val_loss']
             patience_counter = 0
-            torch.save(model.state_dict(), 'best_model.pth')
-            print(f"\n✅ New best model saved at epoch {epoch} with Val_Loss: {best_val_loss:.4f}")
+            model_save_path = f"{args.model_name}_model.pth"
+            torch.save(model.state_dict(), model_save_path)
+            print(f"\n✅ New best model saved as {model_save_path} at epoch {epoch} with Val_Loss: {best_val_loss:.4f}")
         else:
             patience_counter += 1
             print(f"\n⚠️ No improvement. patience_counter = {patience_counter}/{early_stopping_patience}")
