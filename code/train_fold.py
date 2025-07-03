@@ -165,6 +165,21 @@ def evaluate(loader, model, loss_fn, device):
     val_f1 = f1_score(targets_list, preds_list, average='macro')
     return {"val_loss": val_loss, "val_acc": val_acc, "val_f1": val_f1}
 
+# 혼동 클래스 3↔7 보정 함수 정의
+
+def correct_confused_preds(pred_df, probs):
+    corrected = 0
+    for i in range(len(pred_df)):
+        pred = pred_df.loc[i, 'target']
+        if pred in [3, 7]:
+            prob3 = probs[i][3]
+            prob7 = probs[i][7]
+            if abs(prob3 - prob7) < 0.05:
+                pred_df.loc[i, 'target'] = 3 if prob3 > prob7 else 7
+                corrected += 1
+    print(f"🔧 혼동된 3↔7 클래스 {corrected}개 보정 완료")
+    return pred_df
+
 # main 함수 정의
 def main():
     # argparse로 하이퍼파라미터 정의
@@ -319,8 +334,21 @@ def main():
                 preds = model(image)
             preds_list.extend(preds.argmax(dim=1).detach().cpu().numpy())
 
+        all_probs = []
+        preds_list = []
+        for image, _ in tqdm(tst_loader):
+            image = image.to(device)
+            with torch.no_grad():
+                preds = model(image)
+                probs = torch.softmax(preds, dim=1).cpu().numpy()
+                all_probs.extend(probs)
+                preds_list.extend(np.argmax(probs, axis=1))
+
         pred_df = pd.DataFrame(tst_dataset.df, columns=['ID', 'target'])
         pred_df['target'] = preds_list
+
+        # 혼동 클래스 보정
+        pred_df = correct_confused_preds(pred_df, all_probs)
         sample_submission_df = pd.read_csv(os.path.join(args.data_dir, 'sample_submission.csv'))
         assert (sample_submission_df['ID'] == pred_df['ID']).all()
 
