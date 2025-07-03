@@ -80,7 +80,23 @@ def evaluate(loader, model, loss_fn, device):
     return {"val_loss": val_loss, "val_acc": val_acc, "val_f1": val_f1}
 
 # 1 epoch 학습 함수 정의
-def train_one_epoch(loader, model, optimizer, loss_fn, device):
+
+# CutMix & MixUp utils
+def rand_bbox(size, lam):
+    W = size[2]
+    H = size[3]
+    cut_rat = np.sqrt(1. - lam)
+    cut_w = np.int32(W * cut_rat)
+    cut_h = np.int32(H * cut_rat)
+    cx = np.random.randint(W)
+    cy = np.random.randint(H)
+    bbx1 = np.clip(cx - cut_w // 2, 0, W)
+    bby1 = np.clip(cy - cut_h // 2, 0, H)
+    bbx2 = np.clip(cx + cut_w // 2, 0, W)
+    bby2 = np.clip(cy + cut_h // 2, 0, H)
+    return bbx1, bby1, bbx2, bby2
+
+def train_one_epoch(loader, model, optimizer, loss_fn, device, use_cutmix=False, use_mixup=False, alpha=1.0):
     model.train()
     train_loss = 0
     preds_list = []
@@ -91,9 +107,29 @@ def train_one_epoch(loader, model, optimizer, loss_fn, device):
         image = image.to(device)
         targets = targets.to(device)
 
-        model.zero_grad(set_to_none=True)
-        preds = model(image)
-        loss = loss_fn(preds, targets)
+        optimizer.zero_grad(set_to_none=True)
+
+        if use_cutmix and np.random.rand() < 0.5:
+            lam = np.random.beta(alpha, alpha)
+            rand_index = torch.randperm(image.size()[0]).to(device)
+            target_a = targets
+            target_b = targets[rand_index]
+            bbx1, bby1, bbx2, bby2 = rand_bbox(image.size(), lam)
+            image[:, :, bbx1:bbx2, bby1:bby2] = image[rand_index, :, bbx1:bbx2, bby1:bby2]
+            preds = model(image)
+            loss = lam * loss_fn(preds, target_a) + (1 - lam) * loss_fn(preds, target_b)
+        elif use_mixup and np.random.rand() < 0.5:
+            lam = np.random.beta(alpha, alpha)
+            rand_index = torch.randperm(image.size()[0]).to(device)
+            mixed_image = lam * image + (1 - lam) * image[rand_index, :]
+            target_a = targets
+            target_b = targets[rand_index]
+            preds = model(mixed_image)
+            loss = lam * loss_fn(preds, target_a) + (1 - lam) * loss_fn(preds, target_b)
+        else:
+            preds = model(image)
+            loss = loss_fn(preds, targets)
+
         loss.backward()
         optimizer.step()
 
@@ -142,6 +178,9 @@ def main():
     parser.add_argument('--data_dir', type=str, default='../input/data')
     parser.add_argument('--model_type', type=str, default='cnn', choices=['cnn', 'transformer'])
     parser.add_argument('--early_stop', type=int, default=5)
+    parser.add_argument('--cutmix', action='store_true', help='Use CutMix augmentation')
+    parser.add_argument('--mixup', action='store_true', help='Use MixUp augmentation')
+    parser.add_argument('--mix_alpha', type=float, default=1.0, help='Alpha for CutMix/MixUp')
     args = parser.parse_args()
 
     # WandB 프로젝트 초기화
@@ -239,7 +278,10 @@ def main():
         best_model_path = f"{args.model_name}_fold{fold}_best.pth"
 
         for epoch in range(args.epochs):
-            metrics = train_one_epoch(trn_loader, model, optimizer, loss_fn, device)
+            metrics = train_one_epoch(
+                trn_loader, model, optimizer, loss_fn, device,
+                use_cutmix=args.cutmix, use_mixup=args.mixup, alpha=args.mix_alpha
+            )
             val_metrics = evaluate(val_loader, model, loss_fn, device)
             metrics.update(val_metrics)
             metrics['epoch'] = epoch
