@@ -21,10 +21,8 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.model_selection import StratifiedKFold
 import wandb
 
-
-
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
-from warmup_scheduler import GradualWarmupScheduler
+from warmup_scheduler import GradualWarmupScheduler  # pip install warmup-scheduler
 
 # 데이터셋 클래스 정의
 class ImageDataset(Dataset):
@@ -198,7 +196,6 @@ def main():
     parser.add_argument('--cutmix', action='store_true', help='Use CutMix augmentation')
     parser.add_argument('--mixup', action='store_true', help='Use MixUp augmentation')
     parser.add_argument('--mix_alpha', type=float, default=1.0, help='Alpha for CutMix/MixUp')
-    parser.add_argument('--label_smoothing', type=float, default=0.0, help='Label smoothing factor (0.0 to disable)')
     args = parser.parse_args()
 
     # WandB 프로젝트 초기화
@@ -220,14 +217,16 @@ def main():
     if args.model_type == 'transformer':
         trn_transform = A.Compose([
             A.Resize(height=args.img_size, width=args.img_size),
-            # 뒤집힌 테스트 대응
-            A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.3),            # 너무 높지 않게 (예: 0.7 → ❌)
-            # 랜덤 방향 회전 대응 (비대칭 문서도 있으니 약하게)
-            A.RandomRotate90(p=0.3),          # 항상 회전 ❌, 가끔만 적용
-            A.Rotate(limit=15, p=0.3),        # 10~15도 사이 적절
-            # 노이즈/조명 대비 향상
-            A.RandomBrightnessContrast(p=0.2),
+            A.HorizontalFlip(p=0.5),           # 문서 반전 대응
+            A.VerticalFlip(p=0.3),             # 일부 문서 위아래 반전 대응
+            A.RandomRotate90(p=0.2),           # 자연스러운 방향 오류 대응
+            A.Rotate(limit=15, p=0.3),         # 기울어진 문서 보정 효과
+            A.RandomBrightnessContrast(p=0.2), # 스캔 밝기 균일화
+            A.HueSaturationValue(p=0.1),       # 색조 보정 (의미는 낮지만 안정화에 도움)
+            A.OneOf([
+                A.GaussNoise(var_limit=(10.0, 30.0)),
+                A.MotionBlur(blur_limit=3)
+            ], p=0.2),
             A.Normalize(mean=[0.485, 0.456, 0.406],
                         std=[0.229, 0.224, 0.225]),
             ToTensorV2(),
@@ -245,12 +244,12 @@ def main():
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.7),
             A.RandomRotate90(p=1.0),
-            A.Rotate(limit=45, p=0.7),
+            A.Rotate(limit=30, p=0.6),
             A.GaussNoise(var_limit=(20.0, 60.0), p=0.5),
             A.MotionBlur(blur_limit=5, p=0.4),
             A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.4),
             A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.4),
-            A.RandomResizedCrop(height=args.img_size, width=args.img_size, scale=(0.6, 1.0), ratio=(0.8, 1.2), p=0.3),
+            A.RandomResizedCrop(height=args.img_size, width=args.img_size, scale=(0.6, 1.0), ratio=(0.8, 1.2), p=0.4),
             A.Normalize(mean=[0.485, 0.456, 0.406],
                         std=[0.229, 0.224, 0.225]),
             ToTensorV2(),
@@ -287,17 +286,22 @@ def main():
         val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
         tst_loader = DataLoader(tst_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
         # EfficientNetV2-S: Hugging Face 경로로 자동 치환
+        # Swin Transformer: 모델명 자동 치환
         if args.model_name == "efficientnetv2_s":
             model_name = "efficientnetv2_rw_s"
         else:
             model_name = args.model_name
 
         model = timm.create_model(model_name, pretrained=True, num_classes=17).to(device)
-
-        loss_fn = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+        loss_fn = nn.CrossEntropyLoss()
+        # Optimizer 설정
         optimizer = Adam(model.parameters(), lr=args.lr)
-        cosine_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6)
-        scheduler = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=3, after_scheduler=cosine_scheduler)
+
+        # CosineAnnealingWarmRestarts 설정
+        cosine_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2)
+
+        # GradualWarmupScheduler 설정
+        scheduler = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=5, after_scheduler=cosine_scheduler)
 
         best_val_f1 = -1.0  # <-- epoch 루프 전에 초기화!
         patience_counter = 0
@@ -314,12 +318,11 @@ def main():
             print(f"[Epoch {epoch}] Loss: {metrics['train_loss']:.4f}, Acc: {metrics['train_acc']:.4f}, F1: {metrics['train_f1']:.4f} | Val_Loss: {metrics['val_loss']:.4f}, Val_Acc: {metrics['val_acc']:.4f}, Val_F1: {metrics['val_f1']:.4f}")
             wandb.log(metrics)
 
+            # ✅ Warmup + Cosine은 epoch 단위 step
+            scheduler.step()
 
-            # Warmup + CosineAnnealingWarmRestarts: step every epoch
-            scheduler.step(epoch)
-
-            # F1 기준으로 best model 저장
-            if metrics['val_f1'] > best_val_f1:  # val_f1 기준으로 최고 성능 모델 저장
+            # F1 기준 best model 저장
+            if metrics['val_f1'] > best_val_f1:
                 best_val_f1 = metrics['val_f1']
                 patience_counter = 0
                 torch.save(model.state_dict(), best_model_path)

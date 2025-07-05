@@ -1,4 +1,4 @@
-# train_fold_kfold_with_infer.py
+# train_seperate_aug.py
 import argparse
 import os
 import time
@@ -13,7 +13,8 @@ import numpy as np
 import torch.nn as nn
 from albumentations.pytorch import ToTensorV2
 from torch.optim import Adam
-from torchvision import transforms
+import torchvision.models as models
+import torchvision.transforms as T
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from tqdm import tqdm
@@ -42,44 +43,6 @@ class ImageDataset(Dataset):
         if self.transform:
             img = self.transform(image=img)['image']
         return img, target
-
-# Validation 평가 함수 정의
-def evaluate(loader, model, loss_fn, device):
-    model.eval()
-    val_loss = 0
-    preds_list = []
-    targets_list = []
-    with torch.no_grad():
-        for image, targets in loader:
-            image = image.to(device)
-            targets = targets.to(device)
-            preds = model(image)
-            loss = loss_fn(preds, targets)
-            val_loss += loss.item()
-            preds_list.extend(preds.argmax(dim=1).detach().cpu().numpy())
-            targets_list.extend(targets.detach().cpu().numpy())
-    val_loss /= len(loader)
-    val_acc = accuracy_score(targets_list, preds_list)
-    val_f1 = f1_score(targets_list, preds_list, average='macro')
-    return {"val_loss": val_loss, "val_acc": val_acc, "val_f1": val_f1}
-def evaluate(loader, model, loss_fn, device):
-    model.eval()
-    val_loss = 0
-    preds_list = []
-    targets_list = []
-    with torch.no_grad():
-        for image, targets in loader:
-            image = image.to(device)
-            targets = targets.to(device)
-            preds = model(image)
-            loss = loss_fn(preds, targets)
-            val_loss += loss.item()
-            preds_list.extend(preds.argmax(dim=1).detach().cpu().numpy())
-            targets_list.extend(targets.detach().cpu().numpy())
-    val_loss /= len(loader)
-    val_acc = accuracy_score(targets_list, preds_list)
-    val_f1 = f1_score(targets_list, preds_list, average='macro')
-    return {"val_loss": val_loss, "val_acc": val_acc, "val_f1": val_f1}
 
 # 1 epoch 학습 함수 정의
 
@@ -182,6 +145,47 @@ def correct_confused_preds(pred_df, probs):
     print(f"🔧 혼동된 3↔7 클래스 {corrected}개 보정 완료")
     return pred_df
 
+def load_non_doc_classifier(device, model_name='efficientnet_b2', binary_model_path="binary_non_doc_classifier.pth"):
+    model = timm.create_model(model_name, pretrained=False, num_classes=2)
+    model.load_state_dict(torch.load(binary_model_path, map_location=device))
+    model.to(device)
+    model.eval()
+    return model
+
+# ====================== 비문서 이진 분류 후처리 함수 추가 ======================
+def apply_non_doc_classifier(pred_df, tst_loader, device, all_probs, args, binary_model_path="binary_non_doc_classifier.pth", model_name='efficientnet_b2'):
+    print("📎 비문서 이진 분류 후처리 시작...")
+
+    binary_model = load_non_doc_classifier(device, model_name=model_name, binary_model_path=binary_model_path)
+
+    transform = T.Compose([
+        T.Resize((224, 224)),
+        T.ToTensor(),
+        T.Normalize(mean=[0.485, 0.456, 0.406],
+                    std=[0.229, 0.224, 0.225])
+    ])
+
+    img_dir = os.path.join(args.data_dir, "test")
+    corrected = 0
+
+    for i, row in pred_df.iterrows():
+        img_path = os.path.join(img_dir, row['ID'])
+        img = Image.open(img_path).convert("RGB")
+        img = transform(img).unsqueeze(0).to(device)
+
+        with torch.no_grad():
+            pred = binary_model(img).softmax(dim=1)
+            is_non_doc = pred.argmax(1).item()
+
+        if is_non_doc:  # 2 or 16
+            probs = all_probs[i]
+            pred_df.loc[i, "target"] = 2 if probs[2] > probs[16] else 16
+            corrected += 1
+
+    print(f"🧹 비문서 보정 완료: {corrected}개 (2 or 16)")
+    return pred_df
+
+
 # main 함수 정의
 def main():
     # argparse로 하이퍼파라미터 정의
@@ -198,7 +202,7 @@ def main():
     parser.add_argument('--cutmix', action='store_true', help='Use CutMix augmentation')
     parser.add_argument('--mixup', action='store_true', help='Use MixUp augmentation')
     parser.add_argument('--mix_alpha', type=float, default=1.0, help='Alpha for CutMix/MixUp')
-    parser.add_argument('--label_smoothing', type=float, default=0.0, help='Label smoothing factor (0.0 to disable)')
+    # parser.add_argument('--label_smoothing', type=float, default=0.0, help='Label smoothing factor (0.0 to disable)')
     args = parser.parse_args()
 
     # WandB 프로젝트 초기화
@@ -245,12 +249,12 @@ def main():
             A.HorizontalFlip(p=0.5),
             A.VerticalFlip(p=0.7),
             A.RandomRotate90(p=1.0),
-            A.Rotate(limit=45, p=0.7),
+            A.Rotate(limit=30, p=0.6),
             A.GaussNoise(var_limit=(20.0, 60.0), p=0.5),
             A.MotionBlur(blur_limit=5, p=0.4),
             A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.4),
             A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.4),
-            A.RandomResizedCrop(height=args.img_size, width=args.img_size, scale=(0.6, 1.0), ratio=(0.8, 1.2), p=0.3),
+            A.RandomResizedCrop(height=args.img_size, width=args.img_size, scale=(0.6, 1.0), ratio=(0.8, 1.2), p=0.4),
             A.Normalize(mean=[0.485, 0.456, 0.406],
                         std=[0.229, 0.224, 0.225]),
             ToTensorV2(),
@@ -294,10 +298,10 @@ def main():
 
         model = timm.create_model(model_name, pretrained=True, num_classes=17).to(device)
 
-        loss_fn = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+        # loss_fn = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
+        loss_fn = nn.CrossEntropyLoss()
         optimizer = Adam(model.parameters(), lr=args.lr)
-        cosine_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, T_mult=2, eta_min=1e-6)
-        scheduler = GradualWarmupScheduler(optimizer, multiplier=1, total_epoch=3, after_scheduler=cosine_scheduler)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=2, verbose=True)
 
         best_val_f1 = -1.0  # <-- epoch 루프 전에 초기화!
         patience_counter = 0
@@ -314,11 +318,13 @@ def main():
             print(f"[Epoch {epoch}] Loss: {metrics['train_loss']:.4f}, Acc: {metrics['train_acc']:.4f}, F1: {metrics['train_f1']:.4f} | Val_Loss: {metrics['val_loss']:.4f}, Val_Acc: {metrics['val_acc']:.4f}, Val_F1: {metrics['val_f1']:.4f}")
             wandb.log(metrics)
 
-
-            # Warmup + CosineAnnealingWarmRestarts: step every epoch
-            scheduler.step(epoch)
+            # ✅ 모델 저장 기준 및 스케줄러 기준도 val_f1 기준으로 수정
+            scheduler.step(metrics['val_f1'])
 
             # F1 기준으로 best model 저장
+            if fold == 0:  # best_val_f1 초기화 위치 예시
+                best_val_f1 = 0.0
+                
             if metrics['val_f1'] > best_val_f1:  # val_f1 기준으로 최고 성능 모델 저장
                 best_val_f1 = metrics['val_f1']
                 patience_counter = 0
@@ -335,13 +341,6 @@ def main():
         print(f"\n🧪 Inference using {best_model_path}")
         model.load_state_dict(torch.load(best_model_path, map_location=device))
         model.eval()
-
-        preds_list = []
-        for image, _ in tqdm(tst_loader):
-            image = image.to(device)
-            with torch.no_grad():
-                preds = model(image)
-            preds_list.extend(preds.argmax(dim=1).detach().cpu().numpy())
 
         all_probs = []
         preds_list = []
@@ -360,6 +359,9 @@ def main():
         pred_df = correct_confused_preds(pred_df, all_probs)
         sample_submission_df = pd.read_csv(os.path.join(args.data_dir, 'sample_submission.csv'))
         assert (sample_submission_df['ID'] == pred_df['ID']).all()
+
+        # 🔁 비문서 이진 분류 후처리 적용
+        pred_df = apply_non_doc_classifier(pred_df, tst_loader, device, all_probs, args, model_name='efficientnet_b2')
 
         # 예측 결과 저장
         KST = timezone(timedelta(hours=9))
