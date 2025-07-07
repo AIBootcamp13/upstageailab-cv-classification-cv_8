@@ -1,4 +1,3 @@
-# train_non_doc_classifier.py
 import os
 import random
 import argparse
@@ -40,7 +39,7 @@ class BinaryDocDataset(Dataset):
         img = np.array(img)
 
         if self.transform:
-            img = self.transform(image=img)['image']  # ✅ Albumentations expects dict input
+            img = self.transform(image=img)['image']
 
         label = 1 if row['target'] in NON_DOC_CLASSES else 0
         return img, label
@@ -53,17 +52,7 @@ def train_binary_classifier(args):
     )
 
     transform = A.Compose([
-        A.LongestMaxSize(max_size=args.img_size),
-        A.PadIfNeeded(min_height=args.img_size, min_width=args.img_size, border_mode=0),
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.7),
-        A.RandomRotate90(p=1.0),
-        A.Rotate(limit=30, p=0.6),
-        A.GaussNoise(var_limit=(20.0, 60.0), p=0.5),
-        A.MotionBlur(blur_limit=5, p=0.4),
-        A.RandomBrightnessContrast(brightness_limit=0.3, contrast_limit=0.3, p=0.4),
-        A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.4),
-        A.RandomResizedCrop(height=args.img_size, width=args.img_size, scale=(0.6, 1.0), ratio=(0.8, 1.2), p=0.4),
+        A.Resize(args.img_size, args.img_size),
         A.Normalize(mean=[0.485, 0.456, 0.406],
                     std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
@@ -77,20 +66,21 @@ def train_binary_classifier(args):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = timm.create_model('efficientnet_b2', pretrained=True, num_classes=2)
+    model = timm.create_model(args.model_name, pretrained=True, num_classes=2)
     model = model.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = nn.CrossEntropyLoss()
 
-    best_f1 = 0
+    best_f1 = -1.0
+    patience_counter = 0
 
     for epoch in range(args.epochs):
         model.train()
         train_loss = 0
         pred_list, target_list = [], []
 
-        for x, y in tqdm(train_loader):
+        for x, y in tqdm(train_loader, desc=f"[Train] Epoch {epoch}"):
             x, y = x.to(device), y.to(device)
             optimizer.zero_grad()
             pred = model(x)
@@ -105,7 +95,6 @@ def train_binary_classifier(args):
         train_f1 = f1_score(target_list, pred_list)
         print(f"[Epoch {epoch}] Train Loss: {train_loss/len(train_loader):.4f}, Train F1: {train_f1:.4f}")
 
-        # validation
         model.eval()
         val_preds, val_targets = [], []
         with torch.no_grad():
@@ -119,17 +108,28 @@ def train_binary_classifier(args):
         val_acc = accuracy_score(val_targets, val_preds)
         print(f"💡 Val F1: {val_f1:.4f} | Val Acc: {val_acc:.4f}")
 
-        if val_f1 > best_f1:
+        if val_f1 > best_f1 + 1e-5:
             best_f1 = val_f1
+            patience_counter = 0
             torch.save(model.state_dict(), "binary_non_doc_classifier.pth")
-            print(f"✅ Saved model at epoch {epoch}")
+            print(f"✅ Saved best model at epoch {epoch} with Val F1: {best_f1:.4f}")
+        else:
+            patience_counter += 1
+            print(f"⚠️ No improvement. patience_counter = {patience_counter}/{args.early_stop}")
+            if patience_counter >= args.early_stop:
+                print(f"🛑 Early stopping triggered at epoch {epoch}")
+                break
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='../input/data')
-    parser.add_argument('--img_size', type=int, default=380)
-    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--img_size', type=int, default=384)
+    parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--lr', type=float, default=1e-4)
-    parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--epochs', type=int, default=20)
+    parser.add_argument('--early_stop', type=int, default=5)
+    parser.add_argument('--model_name', type=str, default='convnext_base')
+    parser.add_argument('--model_type', type=str, default='cnn')  # reserved
     args = parser.parse_args()
+
     train_binary_classifier(args)
