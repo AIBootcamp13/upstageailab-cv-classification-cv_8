@@ -172,13 +172,13 @@ def correct_confused_preds(pred_df, probs):
     return pred_df
 
 # ====================== 비문서 이진 분류 후처리 함수 추가 ======================
-def load_non_doc_classifier(device, model_name='convnext_base', binary_model_path="binary_non_doc_classifier.pth"):
+def load_non_doc_classifier(device, model_name='coat_lite_medium', binary_model_path="binary_non_doc_classifier.pth"):
     model = timm.create_model(model_name, pretrained=False, num_classes=2)
     model.load_state_dict(torch.load(binary_model_path, map_location=device))
     model.to(device)
     model.eval()
     return model
-def apply_non_doc_classifier(pred_df, tst_loader, device, all_probs, args, binary_model_path="binary_non_doc_classifier.pth", model_name='convnext_base'):
+def apply_non_doc_classifier(pred_df, tst_loader, device, all_probs, args, binary_model_path="binary_non_doc_classifier.pth", model_name='coat_lite_medium'):
     print("📎 비문서 이진 분류 후처리 시작...")
 
     binary_model = load_non_doc_classifier(device, model_name=model_name, binary_model_path=binary_model_path)
@@ -229,7 +229,7 @@ def main():
     parser.add_argument('--lr', type=float, default=1e-3)
     parser.add_argument('--batch_size', type=int, default=24)
     parser.add_argument('--img_size', type=int, default=300)
-    parser.add_argument('--model_name', type=str, default='convnext_base')
+    parser.add_argument('--model_name', type=str, default='coat_lite_medium')
     parser.add_argument('--exp_name', type=str, default='baseline')
     parser.add_argument('--data_dir', type=str, default='../input/data')
     parser.add_argument('--model_type', type=str, default='cnn', choices=['cnn', 'transformer'])
@@ -315,8 +315,8 @@ def main():
     aug_df = pd.read_csv(aug_csv_path)
 
     # 🔁 Offline 증강
-    combined_df = pd.concat([df, aug_df], ignore_index=True) # 1.원본과 증강 데이터 모두 사용
-    # combined_df = aug_df # 2.증강 데이터만 사용
+    # combined_df = pd.concat([df, aug_df], ignore_index=True) # 1.원본과 증강 데이터 모두 사용
+    combined_df = aug_df # 2.증강 데이터만 사용
 
 
     # 2. K-Fold split
@@ -409,7 +409,7 @@ def main():
         assert (sample_submission_df['ID'] == pred_df['ID']).all()
 
         # 🔁 비문서 이진 분류 후처리 적용
-        pred_df = apply_non_doc_classifier(pred_df, tst_loader, device, all_probs, args, model_name='convnext_base')
+        pred_df = apply_non_doc_classifier(pred_df, tst_loader, device, all_probs, args, model_name='coat_lite_medium')
 
         # 예측 결과 저장
         KST = timezone(timedelta(hours=9))
