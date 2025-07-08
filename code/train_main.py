@@ -259,17 +259,22 @@ def main():
     if args.model_type == 'transformer':
         trn_transform = A.Compose([
             A.Resize(height=args.img_size, width=args.img_size),
-            # 뒤집힌 테스트 대응
-            A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.3),            # 너무 높지 않게 (예: 0.7 → ❌)
-            # 랜덤 방향 회전 대응 (비대칭 문서도 있으니 약하게)
-            A.RandomRotate90(p=0.3),          # 항상 회전 ❌, 가끔만 적용
-            A.Rotate(limit=15, p=0.3),        # 10~15도 사이 적절
-            # 노이즈/조명 대비 향상
-            A.RandomBrightnessContrast(p=0.2),
+
+            # 📄 문서 구조 깨지지 않게 약한 augmentation 위주
+            A.HorizontalFlip(p=0.4),           # 문서 좌우 반전: 약하게만
+            A.VerticalFlip(p=0.2),             # 상하 반전은 더 약하게
+            A.Rotate(limit=15, p=0.3),         # 약한 회전 (문서 틀어짐 대응)
+            A.RandomRotate90(p=0.2),           # 비대칭 문서 대응용
+
+            # 💡 색상/노이즈 조절 (Transformer는 global context 학습이므로 약하게)
+            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.3),
+            A.ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05, p=0.2),
+            A.GaussNoise(var_limit=(10.0, 30.0), p=0.2),
+
+            # ✅ 가장 중요: 강제 Resize 후 Normalize
             A.Normalize(mean=[0.485, 0.456, 0.406],
                         std=[0.229, 0.224, 0.225]),
-            ToTensorV2(),
+            ToTensorV2()
         ])
         tst_transform = A.Compose([
             A.Resize(height=args.img_size, width=args.img_size),
@@ -310,8 +315,8 @@ def main():
     aug_df = pd.read_csv(aug_csv_path)
 
     # 🔁 Offline 증강
-    # combined_df = pd.concat([df, aug_df], ignore_index=True) # 1.원본과 증강 데이터 모두 사용
-    combined_df = aug_df # 2.증강 데이터만 사용
+    combined_df = pd.concat([df, aug_df], ignore_index=True) # 1.원본과 증강 데이터 모두 사용
+    # combined_df = aug_df # 2.증강 데이터만 사용
 
 
     # 2. K-Fold split
@@ -341,7 +346,7 @@ def main():
         else:
             model_name = args.model_name
 
-        model = timm.create_model(model_name, pretrained=True, num_classes=17).to(device)
+        model = timm.create_model(model_name, pretrained=True, num_classes=17, img_size=(384, 384)).to(device)
 
         # loss_fn = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
         loss_fn = nn.CrossEntropyLoss()
