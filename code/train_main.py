@@ -1,4 +1,4 @@
-# train_seperate_aug.py
+# train_main.py
 import argparse
 import os
 import time
