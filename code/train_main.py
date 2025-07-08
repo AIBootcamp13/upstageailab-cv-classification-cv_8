@@ -131,7 +131,13 @@ def evaluate(loader, model, loss_fn, device):
     val_loss /= len(loader)
     val_acc = accuracy_score(targets_list, preds_list)
     val_f1 = f1_score(targets_list, preds_list, average='macro')
-    return {"val_loss": val_loss, "val_acc": val_acc, "val_f1": val_f1}
+    return {
+        "val_loss": val_loss,
+        "val_acc": val_acc,
+        "val_f1": val_f1,
+        "val_preds": preds_list,
+        "val_targets": targets_list
+    }
 
 # 혼동 클래스 3↔7, 4↔14보정 함수 정의
 
@@ -367,6 +373,15 @@ def main():
             metrics['epoch'] = epoch
             print(f"[Epoch {epoch}] Loss: {metrics['train_loss']:.4f}, Acc: {metrics['train_acc']:.4f}, F1: {metrics['train_f1']:.4f} | Val_Loss: {metrics['val_loss']:.4f}, Val_Acc: {metrics['val_acc']:.4f}, Val_F1: {metrics['val_f1']:.4f}")
             wandb.log(metrics)
+
+            # ✅ Confusion Matrix 로깅
+            wandb.log({
+                "val_confusion_matrix": wandb.plot.confusion_matrix(
+                    y_true=val_loader.dataset.df[:, 1].astype(int),  # 정답 라벨
+                    preds=np.array(preds_list),  # 예측값
+                    class_names=[str(i) for i in range(17)]
+                )
+            })
 
             # ✅ 모델 저장 기준 및 스케줄러 기준도 val_f1 기준으로 수정
             scheduler.step(metrics['val_f1'])
