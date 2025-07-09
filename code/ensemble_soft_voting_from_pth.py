@@ -1,3 +1,4 @@
+# ensemble_soft_voting_from_pth.py
 import os
 import torch
 import numpy as np
@@ -67,7 +68,7 @@ def get_tta_transforms(img_size):
 def run_soft_voting_from_fixed_pths(args):
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     NUM_CLASSES = 17
-    pth_paths = [f"{args.base_name}_fold{fold}_best.pth" for fold in range(5)]
+    pth_paths = [f"{args.base_name}_fold{fold}_best.pth" for fold in args.select_folds]
     img_dir = os.path.join(args.data_dir, "test")
     img_names = sorted(os.listdir(img_dir))
 
@@ -125,13 +126,89 @@ def run_soft_voting_from_fixed_pths(args):
     submission = pd.read_csv(os.path.join(args.data_dir, "sample_submission.csv"))
     submission['target'] = ensemble_preds
 
+    # ✅ 후처리: confusion fix
+    submission = correct_confused_preds(submission, ensemble_probs)
+
+    # ✅ 후처리: 비문서 (2,16)
+    submission = apply_non_doc_classifier(submission, ensemble_probs, args.base_name, args.data_dir, DEVICE)
+
+
     KST = timezone(timedelta(hours=9))
     timestamp = datetime.now(KST).strftime("%Y%m%d_%H%M%S")
     tta_tag = "_tta" if args.use_tta else ""
-    filename = f"{timestamp}_{args.base_name}_soft_voting{tta_tag}.csv"
+    folds_tag = "_f" + "".join(map(str, args.select_folds))
+    filename = f"{timestamp}_{args.base_name}_soft_voting{tta_tag}{folds_tag}.csv"
     os.makedirs("../output", exist_ok=True)
     submission.to_csv(os.path.join("../output", filename), index=False)
     print(f"\n✅ 저장 완료: ../output/{filename}")
+
+
+def correct_confused_preds(pred_df, probs):
+    corrected_3_7 = []
+    corrected_4_14 = []
+
+    for i in range(len(pred_df)):
+        pred = pred_df.loc[i, 'target']
+        id_ = pred_df.loc[i, 'ID']
+
+        if pred in [3, 7]:
+            if abs(probs[i][3] - probs[i][7]) < 0.05:
+                new_pred = 3 if probs[i][3] > probs[i][7] else 7
+                if new_pred != pred:
+                    pred_df.loc[i, 'target'] = new_pred
+                    corrected_3_7.append(id_)
+
+        elif pred in [4, 14]:
+            if abs(probs[i][4] - probs[i][14]) < 0.05:
+                new_pred = 4 if probs[i][4] > probs[i][14] else 14
+                if new_pred != pred:
+                    pred_df.loc[i, 'target'] = new_pred
+                    corrected_4_14.append(id_)
+
+    print(f"🔧 3↔7 보정: {len(corrected_3_7)}개 → {corrected_3_7}")
+    print(f"🔧 4↔14 보정: {len(corrected_4_14)}개 → {corrected_4_14}")
+    return pred_df
+
+def apply_non_doc_classifier(pred_df, probs, model_name, data_dir, device):
+    from torchvision import transforms
+    from timm import create_model
+    import torch
+    from PIL import Image
+
+    binary_model_path = "binary_non_doc_classifier.pth"
+    model = create_model(model_name, pretrained=False, num_classes=2)
+    model.load_state_dict(torch.load(binary_model_path, map_location=device))
+    model = model.to(device)
+    model.eval()
+
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406],
+                             [0.229, 0.224, 0.225])
+    ])
+
+    changed_ids = []
+
+    for i, row in pred_df.iterrows():
+        img_path = os.path.join(data_dir, "test", row["ID"])
+        img = transform(Image.open(img_path).convert("RGB")).unsqueeze(0).to(device)
+
+        with torch.no_grad():
+            out = model(img)
+            is_non_doc = torch.argmax(out, dim=1).item()
+
+        if is_non_doc:
+            prob2 = probs[i][2]
+            prob16 = probs[i][16]
+            new_pred = 2 if prob2 > prob16 else 16
+            if pred_df.loc[i, "target"] != new_pred:
+                pred_df.loc[i, "target"] = new_pred
+                changed_ids.append(row["ID"])
+
+    print(f"🧹 비문서 후처리 완료: {len(changed_ids)}개 수정됨")
+    print(f"📂 변경된 ID 목록: {changed_ids}")
+    return pred_df
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -142,6 +219,8 @@ if __name__ == "__main__":
     parser.add_argument('--model_type', type=str, default='transformer')  # cnn or transformer
     parser.add_argument('--use_tta', action='store_true')
     parser.add_argument('--data_dir', type=str, default='../input/data')
+    parser.add_argument('--select_folds', type=int, nargs='+', default=[0, 1, 2, 3, 4],
+                    help='사용할 fold 번호 리스트 (예: 0 1 4)')
     args = parser.parse_args()
 
     run_soft_voting_from_fixed_pths(args)

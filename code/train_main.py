@@ -139,94 +139,6 @@ def evaluate(loader, model, loss_fn, device):
         "val_targets": targets_list
     }
 
-# 혼동 클래스 3↔7, 4↔14보정 함수 정의
-
-def correct_confused_preds(pred_df, probs):
-    corrected_3_7 = 0
-    corrected_4_14 = 0
-    corrected_list_3_7 = []
-    corrected_list_4_14 = []
-
-    for i in range(len(pred_df)):
-        pred = pred_df.loc[i, 'target']
-
-        # 3 ↔ 7 보정
-        if pred in [3, 7]:
-            prob3 = probs[i][3]
-            prob7 = probs[i][7]
-            if abs(prob3 - prob7) < 0.05:
-                new_pred = 3 if prob3 > prob7 else 7
-                if new_pred != pred:
-                    pred_df.loc[i, 'target'] = new_pred
-                    corrected_3_7 += 1
-                    corrected_list_3_7.append(pred_df.loc[i, "ID"])
-
-        # 4 ↔ 14 보정
-        elif pred in [4, 14]:
-            prob4 = probs[i][4]
-            prob14 = probs[i][14]
-            if abs(prob4 - prob14) < 0.05:
-                new_pred = 4 if prob4 > prob14 else 14
-                if new_pred != pred:
-                    pred_df.loc[i, 'target'] = new_pred
-                    corrected_4_14 += 1
-                    corrected_list_4_14.append(pred_df.loc[i, "ID"])
-
-    print(f"🔧 [3↔7 보정] {corrected_3_7}개: {corrected_list_3_7}")
-    print(f"🔧 [4↔14 보정] {corrected_4_14}개: {corrected_list_4_14}")
-    print(f"✅ 총 보정 완료: {corrected_3_7 + corrected_4_14}개")
-    return pred_df
-
-# ====================== 비문서 이진 분류 후처리 함수 추가 ======================
-def load_non_doc_classifier(device, model_name='coat_lite_medium', binary_model_path="binary_non_doc_classifier.pth"):
-    model = timm.create_model(model_name, pretrained=False, num_classes=2)
-    model.load_state_dict(torch.load(binary_model_path, map_location=device))
-    model.to(device)
-    model.eval()
-    return model
-def apply_non_doc_classifier(pred_df, tst_loader, device, all_probs, args, binary_model_path="binary_non_doc_classifier.pth", model_name='coat_lite_medium'):
-    print("📎 비문서 이진 분류 후처리 시작...")
-
-    binary_model = load_non_doc_classifier(device, model_name=model_name, binary_model_path=binary_model_path)
-
-    transform = T.Compose([
-        T.Resize((224, 224)),
-        T.ToTensor(),
-        T.Normalize(mean=[0.485, 0.456, 0.406],
-                    std=[0.229, 0.224, 0.225])
-    ])
-
-    img_dir = os.path.join(args.data_dir, "test")
-    corrected = 0
-    changed_ids = []
-
-    for i, row in pred_df.iterrows():
-        img_path = os.path.join(img_dir, row['ID'])
-        img = Image.open(img_path).convert("RGB")
-        img = transform(img).unsqueeze(0).to(device)
-
-        with torch.no_grad():
-            pred = binary_model(img).softmax(dim=1)
-            is_non_doc = pred.argmax(1).item()
-
-        if is_non_doc:  # 2 or 16
-            probs = all_probs[i]
-            new_target = 2 if probs[2] > probs[16] else 16
-
-            if pred_df.loc[i, "target"] != new_target:
-                pred_df.loc[i, "target"] = new_target
-                corrected += 1
-                changed_ids.append(row['ID'])
-
-    print(f"🧹 실제로 target 보정 완료: {corrected}개 (2 or 16)")
-    if changed_ids:
-        print(f"🗂 변경된 ID 목록: {changed_ids}")
-    else:
-        print("✅ 변경된 ID 없음")
-    return pred_df
-
-
-
 # main 함수 정의
 def main():
     # argparse로 하이퍼파라미터 정의
@@ -490,14 +402,6 @@ def main():
 
         pred_df = pd.DataFrame(tst_dataset.df, columns=['ID', 'target'])
         pred_df['target'] = preds_list
-
-        # 혼동 클래스 보정
-        pred_df = correct_confused_preds(pred_df, all_probs)
-        sample_submission_df = pd.read_csv(os.path.join(args.data_dir, 'sample_submission.csv'))
-        assert (sample_submission_df['ID'] == pred_df['ID']).all()
-
-        # 🔁 비문서 이진 분류 후처리 적용
-        pred_df = apply_non_doc_classifier(pred_df, tst_loader, device, all_probs, args, model_name='coat_lite_medium')
 
         # 예측 결과 저장
         KST = timezone(timedelta(hours=9))
