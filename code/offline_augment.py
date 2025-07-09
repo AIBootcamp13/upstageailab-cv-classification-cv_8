@@ -10,19 +10,23 @@ output_dir = "../input/data/augmented"
 os.makedirs(output_dir, exist_ok=True)
 
 df = pd.read_csv("../input/data/train.csv")
+# df = pd.read_csv("../input/data/train_100.csv")  # 클래스별 100장씩 맞춤
 augmented_records = []
 
 # 증강 파이프라인
 transform = A.Compose([
+    A.ShiftScaleRotate(shift_limit=0.15, scale_limit=0.0, rotate_limit=30, 
+                       border_mode=cv2.BORDER_CONSTANT, value=(255,255,255), p=0.4),
     A.Rotate(limit=30, p=0.7, border_mode=cv2.BORDER_CONSTANT, value=(255,255,255)),
     A.HorizontalFlip(p=0.5),
     A.VerticalFlip(p=0.3),
     A.RandomBrightnessContrast(p=0.5),
-    A.GaussNoise(var_limit=(10.0, 50.0), p=0.4),
+    A.GaussNoise(var_limit=(20.0, 80.0), p=0.5),
     A.MotionBlur(blur_limit=5, p=0.3),
-    A.ISONoise(p=0.2),
+    A.ISONoise(p=0.3),
     A.Downscale(scale_min=0.7, scale_max=0.9, p=0.2),
     A.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1, p=0.3),
+    A.ImageCompression(quality_lower=30, quality_upper=70, p=0.3)
 ])
 
 for i in tqdm(range(len(df))):
