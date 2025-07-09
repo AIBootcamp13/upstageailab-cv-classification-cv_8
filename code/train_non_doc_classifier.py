@@ -66,7 +66,7 @@ def train_binary_classifier(args):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = timm.create_model(args.model_name, pretrained=True, num_classes=2)
+    model = timm.create_model(args.model_name, pretrained=True, num_classes=2, img_size=(384, 384))
     model = model.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -128,8 +128,8 @@ if __name__ == "__main__":
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--epochs', type=int, default=20)
     parser.add_argument('--early_stop', type=int, default=5)
-    parser.add_argument('--model_name', type=str, default='convnext_base')
-    parser.add_argument('--model_type', type=str, default='cnn')  # reserved
+    parser.add_argument('--model_name', type=str, default='coat_lite_medium')
+    parser.add_argument('--model_type', type=str, default='transformer')  # reserved
     args = parser.parse_args()
 
     train_binary_classifier(args)
