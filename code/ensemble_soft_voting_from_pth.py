@@ -1,4 +1,3 @@
-# ensemble_soft_voting_from_pth.py
 import os
 import torch
 import numpy as np
@@ -10,8 +9,8 @@ from PIL import Image
 from timm import create_model
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import argparse
 
-# ✅ TestDataset 정의
 class TestDataset(Dataset):
     def __init__(self, img_dir, transform=None):
         self.img_dir = img_dir
@@ -26,18 +25,16 @@ class TestDataset(Dataset):
         img = Image.open(img_path).convert("RGB")
         if self.transform:
             img = self.transform(image=np.array(img))['image']
-        return img
-
-# ✅ transform 정의
+        return img, self.img_names[idx]
 
 def get_transform(img_size, model_type="cnn"):
     if model_type == "transformer":
         return A.Compose([
-            A.Resize(height=img_size, width=img_size),
+            A.Resize(img_size, img_size),
             A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ToTensorV2(),
         ])
-    else:  # cnn
+    else:
         return A.Compose([
             A.LongestMaxSize(max_size=img_size),
             A.PadIfNeeded(min_height=img_size, min_width=img_size, border_mode=0),
@@ -45,67 +42,108 @@ def get_transform(img_size, model_type="cnn"):
             ToTensorV2(),
         ])
 
-# ✅ soft voting 함수
-def run_soft_voting_from_fixed_pths(config):
-    base_name = config['base_name']
-    img_size = config['img_size']
-    batch_size = config['batch_size']
-    force_model_img_size = config.get('force_model_img_size', False)
-    model_type = config.get('model_type', 'cnn')
+def get_tta_transforms(img_size):
+    return [
+        A.Compose([
+            A.HorizontalFlip(p=1.0),
+            A.Resize(img_size, img_size),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ToTensorV2(),
+        ]),
+        A.Compose([
+            A.VerticalFlip(p=1.0),
+            A.Resize(img_size, img_size),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ToTensorV2(),
+        ]),
+        A.Compose([
+            A.RandomBrightnessContrast(p=1.0),
+            A.Resize(img_size, img_size),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ToTensorV2(),
+        ]),
+    ]
 
+def run_soft_voting_from_fixed_pths(args):
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     NUM_CLASSES = 17
+    pth_paths = [f"{args.base_name}_fold{fold}_best.pth" for fold in range(5)]
+    img_dir = os.path.join(args.data_dir, "test")
+    img_names = sorted(os.listdir(img_dir))
 
-    print("[INFO] 모델 접두사:", base_name)
-
-    pth_paths = [f"{base_name}_fold{fold}_best.pth" for fold in range(5)]
-
-    test_dataset = TestDataset("../input/data/test", transform=get_transform(img_size, model_type))
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    if args.use_tta:
+        print("🧪 TTA 기반 추론 시작...")
+        tta_transforms = get_tta_transforms(args.img_size)
+    else:
+        print("🧪 일반 추론 시작...")
+        tst_transform = get_transform(args.img_size, args.model_type)
+        dataset = TestDataset(img_dir, transform=tst_transform)
+        loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
 
     df_probs = []
-    for path in pth_paths:
+    for pth in pth_paths:
         model = create_model(
-            base_name,
+            args.base_name,
             pretrained=False,
             num_classes=NUM_CLASSES,
-            img_size=(img_size, img_size) if force_model_img_size else None
+            img_size=(args.img_size, args.img_size) if args.force_model_img_size else None
         )
-        model.load_state_dict(torch.load(path, map_location=DEVICE))
+        model.load_state_dict(torch.load(pth, map_location=DEVICE))
         model.to(DEVICE)
         model.eval()
 
-        fold_probs = []
-        with torch.no_grad():
-            for images in tqdm(test_loader, desc=f"Infer {os.path.basename(path)}"):
-                images = images.to(DEVICE)
-                logits = model(images)
-                probs = torch.softmax(logits, dim=1)
-                fold_probs.append(probs.cpu().numpy())
+        probs_all = []
 
-        fold_probs = np.concatenate(fold_probs, axis=0)
-        df_probs.append(fold_probs)
+        if args.use_tta:
+            for name in tqdm(img_names, desc=f"TTA Infer {os.path.basename(pth)}"):
+                img_path = os.path.join(img_dir, name)
+                img_raw = np.array(Image.open(img_path).convert("RGB"))
+
+                tta_probs = []
+                for tf in tta_transforms:
+                    img_aug = tf(image=img_raw)['image'].unsqueeze(0).to(DEVICE)
+                    with torch.no_grad():
+                        pred = model(img_aug)
+                        prob = torch.softmax(pred, dim=1).cpu().numpy()
+                        tta_probs.append(prob)
+
+                mean_prob = np.mean(tta_probs, axis=0)
+                probs_all.append(mean_prob[0])
+        else:
+            with torch.no_grad():
+                for images, _ in tqdm(loader, desc=f"Infer {os.path.basename(pth)}"):
+                    images = images.to(DEVICE)
+                    logits = model(images)
+                    probs = torch.softmax(logits, dim=1)
+                    probs_all.extend(probs.cpu().numpy())
+
+        df_probs.append(np.array(probs_all))
 
     ensemble_probs = np.mean(df_probs, axis=0)
     ensemble_preds = np.argmax(ensemble_probs, axis=1)
 
-    submission = pd.read_csv("../input/data/sample_submission.csv")
+    submission = pd.read_csv(os.path.join(args.data_dir, "sample_submission.csv"))
     submission['target'] = ensemble_preds
 
     KST = timezone(timedelta(hours=9))
     timestamp = datetime.now(KST).strftime("%Y%m%d_%H%M%S")
-    filename = f"{timestamp}_{base_name}_manual_soft_ensemble.csv"
-    output_path = os.path.join("../output", filename)
-    submission.to_csv(output_path, index=False)
-    print(f"\n✅ 수동 soft voting 결과 저장 완료: {output_path}")
+    tta_tag = "_tta" if args.use_tta else ""
+    filename = f"{timestamp}_{args.base_name}_soft_voting{tta_tag}.csv"
+    os.makedirs("../output", exist_ok=True)
+    submission.to_csv(os.path.join("../output", filename), index=False)
+    print(f"\n✅ 저장 완료: ../output/{filename}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--base_name', type=str, default='coat_lite_medium') # 또는 'convnext_base', 
+    parser.add_argument('--img_size', type=int, default=384)
+    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--force_model_img_size', action='store_true') # 모델이 img_size를 강제 학습했을 경우
+    parser.add_argument('--model_type', type=str, default='transformer')  # cnn or transformer
+    parser.add_argument('--use_tta', action='store_true')
+    parser.add_argument('--data_dir', type=str, default='../input/data')
+    args = parser.parse_args()
+
+    run_soft_voting_from_fixed_pths(args)
 
 
-# ✅ 직접 실행할 때 아래 부분만 수정해서 사용
-if __name__ == '__main__':
-    run_soft_voting_from_fixed_pths({
-        "base_name": "convnext_base",
-        "img_size": 380,
-        "batch_size": 16,
-        "force_model_img_size": False, # 모델이 img_size를 강제 학습했을 경우
-        "model_type": "cnn"  # 또는 'transformer'
-    })

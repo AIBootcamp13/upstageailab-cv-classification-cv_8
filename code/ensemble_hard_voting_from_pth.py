@@ -6,7 +6,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 # ✅ 실험 이름 변수로 정의
-EXPERIMENT_NAME = "coat_lite_medium_coat_hybrid"
+EXPERIMENT_NAME = "coat_lite_medium_coat_train100_no_tta"
 
 # 아웃풋 디렉토리 지정
 OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(os.getcwd()), "output"))
