@@ -313,8 +313,8 @@ def main():
             ToTensorV2(),
         ])
 
-    train_csv_path = os.path.join(args.data_dir, 'train.csv')
-    # train_csv_path = os.path.join(args.data_dir, 'train_100.csv') # 클래스별 100장씩 맞춤
+    # train_csv_path = os.path.join(args.data_dir, 'train.csv')
+    train_csv_path = os.path.join(args.data_dir, 'train_100.csv') # 클래스별 100장씩 
     aug_csv_path = os.path.join(args.data_dir, 'augmented.csv')
     train_img_dir = os.path.join(args.data_dir, 'train')
     aug_img_dir = os.path.join(args.data_dir, 'augmented')
@@ -323,8 +323,8 @@ def main():
     aug_df = pd.read_csv(aug_csv_path)
 
     # 🔁 Offline 증강
-    # combined_df = pd.concat([df, aug_df], ignore_index=True) # 1.원본과 증강 데이터 모두 사용
-    combined_df = aug_df # 2.증강 데이터만 사용
+    combined_df = pd.concat([df, aug_df], ignore_index=True) # 1.원본과 증강 데이터 모두 사용
+    # combined_df = aug_df # 2.증강 데이터만 사용
 
 
     # 2. K-Fold split
