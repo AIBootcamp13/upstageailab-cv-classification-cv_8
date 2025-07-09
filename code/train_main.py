@@ -243,6 +243,7 @@ def main():
     parser.add_argument('--cutmix', action='store_true', help='Use CutMix augmentation')
     parser.add_argument('--mixup', action='store_true', help='Use MixUp augmentation')
     parser.add_argument('--mix_alpha', type=float, default=1.0, help='Alpha for CutMix/MixUp')
+    parser.add_argument('--use_tta', action='store_true', help='Use TTA at inference')
     # parser.add_argument('--label_smoothing', type=float, default=0.0, help='Label smoothing factor (0.0 to disable)')
     args = parser.parse_args()
 
@@ -313,6 +314,7 @@ def main():
         ])
 
     train_csv_path = os.path.join(args.data_dir, 'train.csv')
+    # train_csv_path = os.path.join(args.data_dir, 'train_100.csv') # 클래스별 100장씩 맞춤
     aug_csv_path = os.path.join(args.data_dir, 'augmented.csv')
     train_img_dir = os.path.join(args.data_dir, 'train')
     aug_img_dir = os.path.join(args.data_dir, 'augmented')
@@ -372,13 +374,17 @@ def main():
             metrics.update(val_metrics)
             metrics['epoch'] = epoch
             print(f"[Epoch {epoch}] Loss: {metrics['train_loss']:.4f}, Acc: {metrics['train_acc']:.4f}, F1: {metrics['train_f1']:.4f} | Val_Loss: {metrics['val_loss']:.4f}, Val_Acc: {metrics['val_acc']:.4f}, Val_F1: {metrics['val_f1']:.4f}")
+            # wandb.log() 직전 처리
+            metrics.pop("val_preds", None)
+            metrics.pop("val_targets", None)
             wandb.log(metrics)
 
-            # ✅ Confusion Matrix 로깅
+            # ✅ Confusion Matrix 로
+
             wandb.log({
                 "val_confusion_matrix": wandb.plot.confusion_matrix(
-                    y_true=val_loader.dataset.df[:, 1].astype(int),  # 정답 라벨
-                    preds=np.array(preds_list),  # 예측값
+                    y_true=val_metrics["val_targets"],    # 정답 라벨
+                    preds=val_metrics["val_preds"],       # 예측 라벨
                     class_names=[str(i) for i in range(17)]
                 )
             })
@@ -405,15 +411,82 @@ def main():
         model.load_state_dict(torch.load(best_model_path, map_location=device))
         model.eval()
 
+        # ✅ Test-Time Augmentation 정의
+        tta_transforms = [
+            A.Compose([
+                A.Resize(height=args.img_size, width=args.img_size),
+                A.Normalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225]),
+                ToTensorV2(),
+            ]),
+            A.Compose([
+                A.HorizontalFlip(p=1.0),
+                A.Resize(height=args.img_size, width=args.img_size),
+                A.Normalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225]),
+                ToTensorV2(),
+            ]),
+            A.Compose([
+                A.VerticalFlip(p=1.0),
+                A.Resize(height=args.img_size, width=args.img_size),
+                A.Normalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225]),
+                ToTensorV2(),
+            ]),
+            A.Compose([
+                A.Rotate(limit=30, p=1.0),
+                A.Resize(height=args.img_size, width=args.img_size),
+                A.Normalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225]),
+                ToTensorV2(),
+            ]),
+            A.Compose([
+                A.GaussNoise(var_limit=(10.0, 40.0), p=1.0),
+                A.Resize(height=args.img_size, width=args.img_size),
+                A.Normalize(mean=[0.485, 0.456, 0.406],
+                            std=[0.229, 0.224, 0.225]),
+                ToTensorV2(),
+            ]),
+        ]
+
+        # ✅ 추론
         all_probs = []
         preds_list = []
-        for image, _ in tqdm(tst_loader):
-            image = image.to(device)
-            with torch.no_grad():
-                preds = model(image)
-                probs = torch.softmax(preds, dim=1).cpu().numpy()
-                all_probs.extend(probs)
-                preds_list.extend(np.argmax(probs, axis=1))
+
+        if args.use_tta:
+            print("🧪 TTA 적용 중...")
+
+            img_dir = os.path.join(args.data_dir, "test")
+            img_names = pd.read_csv(os.path.join(args.data_dir, 'sample_submission.csv'))['ID'].tolist()
+
+            for name in tqdm(img_names):
+                img_path = os.path.join(img_dir, name)
+                img_raw = np.array(Image.open(img_path).convert("RGB"))
+
+                tta_preds = []
+
+                for tf in tta_transforms:
+                    augmented = tf(image=img_raw)["image"]
+                    augmented = augmented.unsqueeze(0).to(device)
+
+                    with torch.no_grad():
+                        pred = model(augmented)
+                        prob = torch.softmax(pred, dim=1).cpu().numpy()
+                        tta_preds.append(prob)
+
+                avg_prob = np.mean(tta_preds, axis=0)
+                all_probs.append(avg_prob[0])
+                preds_list.append(np.argmax(avg_prob[0]))
+
+        else:
+            for image, _ in tqdm(tst_loader):
+                image = image.to(device)
+                with torch.no_grad():
+                    preds = model(image)
+                    probs = torch.softmax(preds, dim=1).cpu().numpy()
+                    all_probs.extend(probs)
+                    preds_list.extend(np.argmax(probs, axis=1))
+
 
         pred_df = pd.DataFrame(tst_dataset.df, columns=['ID', 'target'])
         pred_df['target'] = preds_list
