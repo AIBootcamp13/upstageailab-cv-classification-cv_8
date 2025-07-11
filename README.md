@@ -1,4 +1,4 @@
-# Title (Please modify the title)
+<img width="1055" height="706" alt="image" src="https://github.com/user-attachments/assets/213ae09e-4579-4a6b-bda4-c3e74555814b" /># Title (Please modify the title)
 ## Team
 
 | ![이정민](https://avatars.githubusercontent.com/u/156163982?v=4) | ![김태현](https://avatars.githubusercontent.com/u/156163982?v=4) | ![문진숙](https://avatars.githubusercontent.com/u/156163982?v=4) | ![강연경](https://avatars.githubusercontent.com/u/156163982?v=4) | ![진 정](https://avatars.githubusercontent.com/u/156163982?v=4) |
@@ -105,8 +105,7 @@ e.g.
 
 ### Leader Board
 
-- _Insert Leader Board Capture_
-- _Write rank and score_
+- F1 Score : 0.9522
 
 ### Presentation
 
