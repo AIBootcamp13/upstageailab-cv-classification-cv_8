@@ -9,8 +9,8 @@ input_dir = "../input/data/train"
 output_dir = "../input/data/augmented"
 os.makedirs(output_dir, exist_ok=True)
 
-df = pd.read_csv("../input/data/train.csv")
-# df = pd.read_csv("../input/data/train_100.csv")  # 클래스별 100장씩 맞춤
+# df = pd.read_csv("../input/data/train.csv")
+df = pd.read_csv("../input/data/train_100.csv")  # 클래스별 100장씩 맞춤
 augmented_records = []
 
 # 증강 파이프라인

@@ -6,13 +6,23 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 # ✅ 실험 이름 변수로 정의
-EXPERIMENT_NAME = "coat_lite_medium_coat_train100_no_tta"
+EXPERIMENT_NAME = "best4_hard_voting"  # 
 
 # 아웃풋 디렉토리 지정
 OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(os.getcwd()), "output"))
 
 # fold별 예측 결과 csv 파일들 자동 탐색
-fold_csvs = sorted(glob.glob(os.path.join(OUTPUT_DIR, f"*{EXPERIMENT_NAME}*.csv")))
+# fold_csvs = sorted(glob.glob(os.path.join(OUTPUT_DIR, f"*{EXPERIMENT_NAME}*.csv")))
+fold_csvs = [
+    os.path.join(OUTPUT_DIR, "20250709_132928_coat_lite_medium_soft_voting.csv"),
+    os.path.join(OUTPUT_DIR, "20250709_134038_coat_lite_medium_coat_train100_no_tta_ensemble.csv"),
+    # os.path.join(OUTPUT_DIR, "20250710_062250_coat_lite_medium_soft_voting_f01234.csv"),
+    os.path.join(OUTPUT_DIR, "20250710_185450_two_stage_convnext_base.csv.csv"),
+]
+
+# fold_csvs = sorted(glob.glob(os.path.join(OUTPUT_DIR, "best", "*.csv")))  # best 폴더에서 모든 csv 파일 탐색
+
+
 assert len(fold_csvs) > 1, "앙상블할 fold csv 파일이 2개 이상 필요합니다."
 print("[INFO] 앙상블 대상 파일들:")
 for f in fold_csvs:
