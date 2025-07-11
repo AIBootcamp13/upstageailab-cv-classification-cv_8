@@ -8,21 +8,29 @@
 
 ## 0. Overview
 ### Environment
-- _Write Development environment_
+- AMD Ryzen Threadripper 3960X 24-Core Processor
+- NVIDIA GeForce RTX 3090
+- CUDA Version 12.2
 
 ### Requirements
-- _Write Requirements_
+- albumentations==1.3.1
+- numpy==1.26.0
+- timm==0.9.12
+- torch==2.1.0
+- torchvision=0.16.0
+- scikit-learn=1.3.2
 
 ## 1. Competiton Info
 
 ### Overview
 
-- _Write competition information_
+- [AIstage](https://stages.ai/en/competitions/356/overview/description)
+- 문서는 금융, 보험, 물류, 의료 등 도메인을 가리지 않고 많이 취급됩니다. 이 대회는 다양한 종류의 문서 이미지의 클래스를 예측합니다.
+- 문서 타입 데이터셋을 이용해 이미지 분류를 모델을 구축합니다. 주어진 문서 이미지를 입력 받아 17개의 클래스 중 정답을 예측하게 됩니다.
 
 ### Timeline
 
-- ex) January 10, 2024 - Start Date
-- ex) February 10, 2024 - Final submission deadline
+- 6월 30일 (월) 10:00 ~ 7월 10일 (목) 19:00
 
 ## 2. Components
 
