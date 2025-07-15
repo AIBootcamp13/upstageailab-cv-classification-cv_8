@@ -1,0 +1,10 @@
+input/
+output/
+code/jupyter_notebooks/
+code/wandb/
+*.pth
+code/train_offaug_convnext.py
+code/train_seperate_aug copy 2.py
+code/train_seperate_aug copy.py
+code/train_seperate_aug.py
+code/__pycache__/warmup_scheduler.cpython-310.pyc
