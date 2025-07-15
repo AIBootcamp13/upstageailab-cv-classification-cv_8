@@ -1,8 +1,8 @@
 ## Team
 
-| ![이정민](https://avatars.githubusercontent.com/u/156163982?v=4) | ![김태현](https://avatars.githubusercontent.com/u/156163982?v=4) | ![문진숙](https://avatars.githubusercontent.com/u/156163982?v=4) | ![강연경](https://avatars.githubusercontent.com/u/156163982?v=4) | ![진 정](https://avatars.githubusercontent.com/u/156163982?v=4) |
+| ![이정민](https://avatars.githubusercontent.com/u/122961094?v=4) | ![김태현](https://avatars.githubusercontent.com/u/7031901?v=4) | ![문진숙](https://avatars.githubusercontent.com/u/204665219?v=4) | ![강연경](https://avatars.githubusercontent.com/u/5043251?v=4) | ![진 정](https://avatars.githubusercontent.com/u/87558804?v=4) |
 | :--------------------------------------------------------------: | :--------------------------------------------------------------: | :--------------------------------------------------------------: | :--------------------------------------------------------------: | :--------------------------------------------------------------: |
-|            [이정민](https://github.com/UpstageAILab)             |            [김태현](https://github.com/UpstageAILab)             |            [문진숙](https://github.com/UpstageAILab)             |            [강연경](https://github.com/UpstageAILab)             |            [진 정](https://github.com/UpstageAILab)             |
+|            [이정민](https://github.com/lIllIlIIIll)             |            [김태현](https://github.com/huefilm)             |            [문진숙](https://github.com/June3723)             |            [강연경](https://github.com/YeonkyungKang)             |            [진 정](https://github.com/wlswjd)             |
 |                            팀장                             |                            담당 역할                             |                            담당 역할                             |                            담당 역할                             |                            담당 역할                             |
 
 ## 0. Overview
