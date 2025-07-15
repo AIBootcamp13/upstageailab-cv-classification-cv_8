@@ -76,7 +76,7 @@ python train_main.py \
 3️⃣ **ensemble_hard_voting_from_pth.py**  : output/폴더에 생긴 5개의 csv 파일을 하드보팅함.(결과파일명의 일부를 코드안 EXPERIMENT_NAME에 설정)
 ```
 # ✅ 실험 이름 변수로 정의
-EXPERIMENT_NAME = "convnext_offaug3_cunfuse_fixtrain_v1"
+EXPERIMENT_NAME = "convnext_offaug3_confuse_fixtrain_v1"
 ```
 3️⃣ **ensemble_soft_voting_from_pth.py**  : code/ 밑에 생긴 5개의 best pth파일을 소프트보팅함.(안에 코드에서 실험한 모델과 image size등 설정)
 
@@ -116,14 +116,14 @@ upstage_cv_project/
 │   └── ...
 │
 ├── output/                          # 📦 예측 결과 및 시각화 출력 (파일명은 자동으로 날짜+모델명+exp_name이 붙음)
-│   ├── 20250707_130305_convnext_offaug3_cunfuse_fixtrain_v1_fold0.csv #2️⃣
-│   ├── 20250707_130305_convnext_offaug3_cunfuse_fixtrain_v1_fold1.csv #2️⃣
-│   ├── 20250707_130305_convnext_offaug3_cunfuse_fixtrain_v1_fold2.csv #2️⃣
-│   ├── 20250707_130305_convnext_offaug3_cunfuse_fixtrain_v1_fold3.csv #2️⃣
-│   ├── 20250707_130305_convnext_offaug3_cunfuse_fixtrain_v1_fold4.csv #2️⃣
+│   ├── 20250707_130305_convnext_offaug3_confuse_fixtrain_v1_fold0.csv #2️⃣
+│   ├── 20250707_130305_convnext_offaug3_confuse_fixtrain_v1_fold1.csv #2️⃣
+│   ├── 20250707_130305_convnext_offaug3_confuse_fixtrain_v1_fold2.csv #2️⃣
+│   ├── 20250707_130305_convnext_offaug3_confuse_fixtrain_v1_fold3.csv #2️⃣
+│   ├── 20250707_130305_convnext_offaug3_confuse_fixtrain_v1_fold4.csv #2️⃣
 │   ├── ... (fold별 예측)
 │   ├── **20250708_123554_convnext_base_manual_soft_ensemble.csv# 최종 앙상블 결과**(Soft voting결과)** 4️⃣
-│   └── **20250707_130305_convnext_offaug3_cunfuse_fixtrain_v1_ensemble.csv   # 최종 앙상블 결과**(Hard voting결과) 4️⃣
+│   └── **20250707_130305_convnext_offaug3_confuse_fixtrain_v1_ensemble.csv   # 최종 앙상블 결과**(Hard voting결과) 4️⃣
 │
 ├── wandb/                    # wandb 관련
 │
