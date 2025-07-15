@@ -96,7 +96,7 @@ python ensemble_soft_voting_from_pth.py \
 ```python
 upstage_cv_project/
 ├── code/               
-│   ├── **train_main.py**     # ConvNeXt 기반 메인 학습 (오프라인 증강 포함)  1️⃣
+│   ├── train_main.py     # 메인 학습 (오프라인 증강 포함)  1️⃣
 │   ├── offline_augment.py # 오프라인 증강을 해주는 파일 (사전에 실행, 코드중간의 for j in range(3): 의 숫자만큼 배수)
 │   ├── train_non_doc_classifier.py  # 2/16 이진 분류기 학습용 (사전에 한번 실행 하면 binary_non_doc_classifier.pth생성됨)
 │   ├── binary_non_doc_classifier.pth # 2/16 이진 분류기 학습결과
@@ -122,8 +122,8 @@ upstage_cv_project/
 │   ├── 20250707_130305_convnext_offaug3_confuse_fixtrain_v1_fold3.csv #2️⃣
 │   ├── 20250707_130305_convnext_offaug3_confuse_fixtrain_v1_fold4.csv #2️⃣
 │   ├── ... (fold별 예측)
-│   ├── **20250708_123554_convnext_base_manual_soft_ensemble.csv# 최종 앙상블 결과**(Soft voting결과)** 4️⃣
-│   └── **20250707_130305_convnext_offaug3_confuse_fixtrain_v1_ensemble.csv   # 최종 앙상블 결과**(Hard voting결과) 4️⃣
+│   ├── 20250708_123554_convnext_base_manual_soft_ensemble.csv# 최종 앙상블 결과(Soft voting결과) 4️⃣
+│   └── 20250707_130305_convnext_offaug3_confuse_fixtrain_v1_ensemble.csv   # 최종 앙상블 결과(Hard voting결과) 4️⃣
 │
 ├── wandb/                    # wandb 관련
 │
