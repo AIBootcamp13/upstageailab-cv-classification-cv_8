@@ -93,6 +93,7 @@ python ensemble_soft_voting_from_pth.py \
 `--force_model_img_size` : 강제로 이미지 사이즈 조정했을 때
 4️⃣  output/폴더에 결과 앙상블 파일 (**~ensemble.csv**) 파일이 생성되면 download 하여 submissoin에 올린다.
 
+```
 upstage_cv_project/
 ├── code/               
 │   ├── **train_main.py**     # ConvNeXt 기반 메인 학습 (오프라인 증강 포함)  1️⃣
@@ -130,7 +131,7 @@ upstage_cv_project/
 │
 ├── README.md                        # 프로젝트 설명
 └── requirements.txt                 # 패키지 리스트
-
+```
 
 
 
