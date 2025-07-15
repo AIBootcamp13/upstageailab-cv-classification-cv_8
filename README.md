@@ -49,19 +49,19 @@
 
   증강이미지(augmented)만을 사용할지 원본(train+augmented)과 같이 사용할지는 아래 코드에서 필요한 것을 사용(안사용하는것 주석)
 
-```
+```python
 # 🔁 Offline 증강
 # combined_df = pd.concat([df, aug_df], ignore_index=True) # 1.원본과 증강 데이터 모두 사용
 combined_df = aug_df # 2.증강 데이터만 사용
 ```
   만일 이진 문서분류(train_non_doc_classifier)를 사용하기 싫으면  train_main.py 에서 아래 해당코드를 주석처리
-```
+```python
 pred_df = apply_non_doc_classifier(pred_df, tst_loader, device, all_probs, args, model_name='convnext_base')
 ```
 
 메인 실험 argparsre 를 이용해서 콘솔에서 옵션을 정해가며 실행할 수 있음 (예: --image_size 380)
 
-```
+```python
 python train_main.py \
   --model_name efficientnet_b4 \
   --img_size 380 \
@@ -74,13 +74,13 @@ python train_main.py \
 ```
 2️⃣ 실험이 끝나면 output/폴더에 날짜+실험exp내용+fold{n}.csv 파일이 폴드갯수만큼 생성됨.
 3️⃣ **ensemble_hard_voting_from_pth.py**  : output/폴더에 생긴 5개의 csv 파일을 하드보팅함.(결과파일명의 일부를 코드안 EXPERIMENT_NAME에 설정)
-```
+```python
 # ✅ 실험 이름 변수로 정의
 EXPERIMENT_NAME = "convnext_offaug3_confuse_fixtrain_v1"
 ```
 3️⃣ **ensemble_soft_voting_from_pth.py**  : code/ 밑에 생긴 5개의 best pth파일을 소프트보팅함.(안에 코드에서 실험한 모델과 image size등 설정)
 
-```
+```python
 python ensemble_soft_voting_from_pth.py \
   --base_name coat_lite_medium \
   --img_size 384 \
@@ -89,11 +89,11 @@ python ensemble_soft_voting_from_pth.py \
   --model_type transformer \
   --use_tta
 ```
- `--use_tta` : tta 사용시
+`--use_tta` : tta 사용시
 `--force_model_img_size` : 강제로 이미지 사이즈 조정했을 때
 4️⃣  output/폴더에 결과 앙상블 파일 (**~ensemble.csv**) 파일이 생성되면 download 하여 submissoin에 올린다.
 
-```
+```python
 upstage_cv_project/
 ├── code/               
 │   ├── **train_main.py**     # ConvNeXt 기반 메인 학습 (오프라인 증강 포함)  1️⃣
@@ -171,13 +171,13 @@ upstage_cv_project/
 ### Modeling Process
 
 - 모델은 timm 라이브러리를 활용하여 사전학습된 구조를 불러와 Transfer Learning 또는 Fine-Tuning 방식으로 학습을 진행
-<pre><code>```
+```python
   model = timm.create_model(
     model_name,
     pretrained=True,
     num_classes=17
 ).to(device)
-```</code></pre>
+```
 - Optimizer는 Adam을 사용하고, 학습률 스케줄러로는 LambdaLR 또는 CosineAnnealingWarmRestarts를 상황에 따라 적용
 - 클래스 불균형을 고려하여 Focal Loss를 사용했으며, 클래스별 데이터 수에 따라 alpha 값을 조정해 손실을 계산(일부 실험에서는 classifier(head)만 학습한 후 전체 모델을 fine-tune해봤음)
 
